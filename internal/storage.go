@@ -36,6 +36,8 @@ type MessengerStorage interface {
 	// Offset returns the offset from which the Write operation can be
 	// resumed. If the message is complete, it returns an error.
 	Offset(ctx *context.T, id string) (int64, error)
+	// Exists returns true if the message exists and is complete.
+	Exists(ctx *context.T, id string) bool
 	// Manifest returns a channel on which all the stored messages can be
 	// read (not their content).
 	Manifest(ctx *context.T) (<-chan *ifc.Message, error)
@@ -232,6 +234,10 @@ func (s *FileStorage) Offset(ctx *context.T, id string) (int64, error) {
 		return 0, err
 	}
 	return fi.Size(), nil
+}
+
+func (s *FileStorage) Exists(ctx *context.T, id string) bool {
+	return s.isComplete(id)
 }
 
 func (s *FileStorage) Manifest(ctx *context.T) (<-chan *ifc.Message, error) {

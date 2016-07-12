@@ -25,18 +25,11 @@ func (m *Messenger) Diff(ctx *context.T, call ifc.MessengerDiffServerCall) error
 	if err := m.Params.RateAclIn.Authorize(ctx, call.Security()); err != nil {
 		return err
 	}
-
 	for call.RecvStream().Advance() {
 		ids := call.RecvStream().Value()
 		responses := make([]bool, len(ids))
 		for i, id := range ids {
-			_, r, err := m.Params.Store.OpenRead(ctx, id)
-			resp := false
-			if err == nil {
-				resp = true
-				r.Close()
-			}
-			responses[i] = resp
+			responses[i] = m.Params.Store.Exists(ctx, id)
 		}
 		if err := call.SendStream().Send(responses); err != nil {
 			return err
@@ -111,7 +104,6 @@ func (m *Messenger) ResumeOffset(ctx *context.T, call rpc.ServerCall, msg ifc.Me
 	if err := m.Params.RateAclIn.Authorize(ctx, call.Security()); err != nil {
 		return 0, err
 	}
-
 	return m.Params.Store.Offset(ctx, msg.Id)
 }
 
@@ -120,7 +112,6 @@ func (m *Messenger) Manifest(ctx *context.T, call ifc.MessageRepositoryManifestS
 	if err := m.Params.RateAclIn.Authorize(ctx, call.Security()); err != nil {
 		return err
 	}
-
 	ch, err := m.Params.Store.Manifest(ctx)
 	if err != nil {
 		return err
@@ -136,7 +127,6 @@ func (m *Messenger) Pull(ctx *context.T, call ifc.MessageRepositoryPullServerCal
 	if err := m.Params.RateAclIn.Authorize(ctx, call.Security()); err != nil {
 		return ifc.Message{}, err
 	}
-
 	msg, r, err := m.Params.Store.OpenRead(ctx, id)
 	if err != nil {
 		return ifc.Message{}, err

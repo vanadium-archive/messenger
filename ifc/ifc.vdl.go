@@ -466,10 +466,10 @@ func NewErrTooManyHops(ctx *context.T, Limit int32) error {
 // Messenger defines the interface to talk to nodes that can relay messages.
 // This interface is EXPERIMENTAL and can change at any time.
 type MessengerClientMethods interface {
-	// Diff compares the set of messages on the client with the set of
-	// messages on the server. The client streams batches of message IDs
-	// and the server reponds with one bool for each message ID. A true
-	// value means the server has the message, a false value means it
+	// Diff compares the set of messages on the sender with the set of
+	// messages on the receiver. The sender streams batches of message IDs
+	// and the receiver reponds with one bool for each message ID. A true
+	// value means the receiver has the message, a false value means it
 	// doesn't.
 	Diff(*context.T, ...rpc.CallOpt) (MessengerDiffClientCall, error)
 	// Push accepts a message. The receiver may be the final recipient
@@ -694,10 +694,10 @@ func (c *implMessengerPushClientCall) Finish() (err error) {
 // Messenger defines the interface to talk to nodes that can relay messages.
 // This interface is EXPERIMENTAL and can change at any time.
 type MessengerServerMethods interface {
-	// Diff compares the set of messages on the client with the set of
-	// messages on the server. The client streams batches of message IDs
-	// and the server reponds with one bool for each message ID. A true
-	// value means the server has the message, a false value means it
+	// Diff compares the set of messages on the sender with the set of
+	// messages on the receiver. The sender streams batches of message IDs
+	// and the receiver reponds with one bool for each message ID. A true
+	// value means the receiver has the message, a false value means it
 	// doesn't.
 	Diff(*context.T, MessengerDiffServerCall) error
 	// Push accepts a message. The receiver may be the final recipient
@@ -718,10 +718,10 @@ type MessengerServerMethods interface {
 // The only difference between this interface and MessengerServerMethods
 // is the streaming methods.
 type MessengerServerStubMethods interface {
-	// Diff compares the set of messages on the client with the set of
-	// messages on the server. The client streams batches of message IDs
-	// and the server reponds with one bool for each message ID. A true
-	// value means the server has the message, a false value means it
+	// Diff compares the set of messages on the sender with the set of
+	// messages on the receiver. The sender streams batches of message IDs
+	// and the receiver reponds with one bool for each message ID. A true
+	// value means the receiver has the message, a false value means it
 	// doesn't.
 	Diff(*context.T, *MessengerDiffServerCallStub) error
 	// Push accepts a message. The receiver may be the final recipient
@@ -797,7 +797,7 @@ var descMessenger = rpc.InterfaceDesc{
 	Methods: []rpc.MethodDesc{
 		{
 			Name: "Diff",
-			Doc:  "// Diff compares the set of messages on the client with the set of\n// messages on the server. The client streams batches of message IDs\n// and the server reponds with one bool for each message ID. A true\n// value means the server has the message, a false value means it\n// doesn't.",
+			Doc:  "// Diff compares the set of messages on the sender with the set of\n// messages on the receiver. The sender streams batches of message IDs\n// and the receiver reponds with one bool for each message ID. A true\n// value means the receiver has the message, a false value means it\n// doesn't.",
 		},
 		{
 			Name: "Push",

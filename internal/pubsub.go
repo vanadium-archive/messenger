@@ -74,12 +74,10 @@ L:
 				break L
 			}
 			ps.mu.Lock()
-			var pos uint
 			for ch := range ps.out {
 				select {
 				case <-ps.ctx.Done():
 				case ch <- &msg:
-					pos++
 				}
 			}
 			ps.mu.Unlock()
