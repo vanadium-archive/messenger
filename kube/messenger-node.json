@@ -1,0 +1,48 @@
+{
+  "apiVersion": "extensions/v1beta1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "messenger-node",
+    "labels": {
+      "application": "messenger-node"
+    }
+  },
+  "spec": {
+    "replicas": 10,
+    "template": {
+      "metadata": {
+        "labels": {
+          "application": "messenger-node"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "vmsg",
+            "image": "b.gcr.io/vmsg/vmsg:latest",
+            "env": [
+              { "name": "V23_NAMESPACE", "value": "/(dev.v.io:r:vprod:service:mounttabled)@ns.dev.staging.v.io:8101" }
+            ],
+            "args": [
+              "robot",
+              "--store-dir=/store",
+              "--enable-local-discovery=false",
+              "--global-discovery-paths=home/dev.v.io:r:vlab/disc",
+              "--max-active-peers=3",
+              "--max-hops=50",
+              "--v23.tcp.address=",
+              "--v23.proxy=proxy"
+            ],
+            "resources": { "limits": { "memory": "500M" } },
+            "volumeMounts": [
+              {"name": "store", "mountPath": "/store" }
+            ]
+          }
+        ],
+        "volumes": [
+          { "name": "store", "emptyDir": {} }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+// Copyright 2016 The Vanadium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package messenger defines interfaces for peer-to-peer messaging where the
+// originator of the message and its recipient don't necessarily have a direct
+// network connection.
+//
+// Messages are opportunistically relayed from device to device until they
+// reach their destination.
+package ifc
+
+import (
+	"time"
+	"v.io/v23/security"
+)
+
+// Messenger defines the interface to talk to nodes that can relay messages.
+// This interface is EXPERIMENTAL and can change at any time.
+type Messenger interface {
+	// Diff compares the set of messages on the client with the set of
+	// messages on the server. The client streams batches of message IDs
+	// and the server reponds with one bool for each message ID. A true
+	// value means the server has the message, a false value means it
+	// doesn't.
+	Diff() stream<[]string,[]bool> error
+	// Push accepts a message. The receiver may be the final recipient
+	// or a relay. If the receiver has already seen this message or
+	// if it cannot relay the message, it should return a error.
+	//
+	// The message content is streamed to the receiver. The content is
+	// opaque to everyone except the final recipient.
+	Push(Msg Message, Offset int64) stream<[]byte,_> error
+	// ResumeOffset returns the size of the partially transferred message.
+	// The caller will use it to resume the transfer. If the message doesn't
+	// exist yet, the returned offset will be 0.
+	ResumeOffset(Msg Message) (Offset int64 | error)
+}
+
+// MessageRepository defines the interface to talk to a node that holds
+// messages.
+// This interface is EXPERIMENTAL and can change at any time.
+type MessageRepository interface {
+	// Manifest shows all messages in the receiver's repository.
+	Manifest() stream<_, Message> error
+	// Pull retrieves the message with the given ID. The message content
+	// is streamed to the caller.
+	Pull(Id string, Offset int64) stream<_, []byte> (Message | error)
+}
+
+// MessengerRepository combines the Messenger and MessageRepository interfaces.
+type MessengerRepository interface {
+	Messenger
+	MessageRepository
+}
+
+// Message contains the metadata of a message, not the content of the message.
+// It is EXPERIMENTAL and can change at any time.
+type Message struct {
+	// The list of nodes that have relayed this message. Each node
+	// must add its own name to the list before sending it to another
+	// node, either via Push() or Pull().
+	Hops []string
+	// The identity of the sender. Can be used to both authenticate
+	// the message and to authorize sending or relaying it. 
+	SenderBlessings security.WireBlessings
+	// Any required discharges to prove the sender blessings are still
+	// valid.
+	SenderDischarges map[string]security.WireDischarge
+	// Proof that the sender sent this message. The signature covers
+	// all the fields below.
+	Signature security.Signature
+	// The unique ID of this message.
+	Id string
+	// The intended recipient of the message.
+	// TBD: blessing pattern or email? Or something else?
+	Recipient string
+	// When the message was created.
+	CreationTime time.Time
+	// The lifespan of the message. The message can be deleted by everyone
+	// when CreationTime + Lifespan has been reached.
+	Lifespan time.Duration
+	// The length of the message's content.
+	Length int64
+	// The sha256 hash of the message's content.
+	Sha256 []byte
+}
+
+error (
+	AlreadySeen(Id string) {"en": "message id already seen: {Id}"}
+	Busy(Id string) {RetryBackoff, "en": "message is already opened"}
+	ContentMismatch() {"en": "the sha256 hash doesn't match the message content"}
+	Expired(CreationTime time.Time, Lifespan time.Duration, Now time.Time) {"en": "message lifespan expired: {CreationTime} + {Lifespan} < {Now}"}
+	IncorrectOffset(Offset, Size int64) {"en": "the specified file offset is incorrect ({Offset} != {Size})"}
+	InvalidSignature() {"en": "message signature is invalid"}
+	MessageIdCollision(Id string) {"en": "message id already seen with different content: {Id}"}
+	NoRoute(Recipient string) {"en": "no route for recipient: {Recipient}"}
+	RateLimitExceeded(Limit float32) {RetryBackoff, "en": "request rate limit exceeded: {Limit} req/s"}
+	TooBig(Limit int64) {"en": "message is too big, limit: {Limit}"}
+	TooManyHops(Limit int32) {"en": "too many hops, limit: {Limit}"}
+)
