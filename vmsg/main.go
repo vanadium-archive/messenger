@@ -235,6 +235,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			switch {
 			case mtxt == "/clear":
 				historyView.Clear()
+				historyView.SetOrigin(0, 0)
 				return nil
 			case mtxt == "/help":
 				help()
@@ -244,6 +245,9 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			case strings.HasPrefix(mtxt, "/send"):
 				fname = strings.TrimSpace(mtxt[5:])
 				mtxt = ""
+			case strings.HasPrefix(mtxt, "/"):
+				fmt.Fprintf(historyView, "### Unknown command %s", mtxt)
+				return nil
 			}
 			if err := sendMessage(ctx, ps, params.Store, mtxt, fname); err != nil {
 				fmt.Fprintf(historyView, "## sendMessage failed: %v\n", err)
