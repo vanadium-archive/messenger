@@ -26,15 +26,15 @@ The vmsg flags are:
    Messages are encrypted with AES256 using this key
  -global-discovery-paths=
    A comma-separated list of namespace paths to use for global discovery.
- -max-active-peers=3
+ -max-active-peers=2
    The maximum number of peers to send updates to concurrently.
- -max-hops=10
+ -max-hops=50
    The maximum number of hops that a message can go through.
- -rate-acl-in=[{"acl":{"In":["..."]},"limit":10}]
+ -rate-acl-in=[{"acl":{"In":["..."]},"limit":20}]
    The RateAcl to authorize incoming RPCs, in JSON format
- -rate-acl-out=[{"acl":{"In":["..."]},"limit":10}]
+ -rate-acl-out=[{"acl":{"In":["..."]},"limit":100}]
    The RateAcl to authorize outgoing RPCs, in JSON format
- -rate-acl-sender=[{"acl":{"In":["..."]},"limit":10}]
+ -rate-acl-sender=[{"acl":{"In":["..."]},"limit":100}]
    The RateAcl to authorize the sender of incoming messages, in JSON format
  -store-dir=
    The name of the local directory where to store the messages.

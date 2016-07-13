@@ -28,8 +28,6 @@
               "--store-dir=/store",
               "--enable-local-discovery=false",
               "--global-discovery-paths=home/dev.v.io:r:vlab/disc",
-              "--max-active-peers=3",
-              "--max-hops=50",
               "--v23.tcp.address=",
               "--v23.proxy=proxy"
             ],

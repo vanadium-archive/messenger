@@ -90,11 +90,11 @@ func main() {
 	cmdRoot.Flags.BoolVar(&enableLocalDisc, "enable-local-discovery", true, "Whether local discovery, i.e. using mDNS and/or BLE, should be enabled.")
 	cmdRoot.Flags.StringVar(&globalDiscPaths, "global-discovery-paths", "", "A comma-separated list of namespace paths to use for global discovery.")
 	cmdRoot.Flags.StringVar(&storeDir, "store-dir", "", "The name of the local directory where to store the messages.")
-	cmdRoot.Flags.IntVar(&maxActivePeers, "max-active-peers", 3, "The maximum number of peers to send updates to concurrently.")
-	cmdRoot.Flags.IntVar(&maxHops, "max-hops", 10, "The maximum number of hops that a message can go through.")
-	cmdRoot.Flags.StringVar(&rateAclInJson, "rate-acl-in", `[{"acl":{"In":["..."]},"limit":10}]`, "The RateAcl to authorize incoming RPCs, in JSON format")
-	cmdRoot.Flags.StringVar(&rateAclOutJson, "rate-acl-out", `[{"acl":{"In":["..."]},"limit":10}]`, "The RateAcl to authorize outgoing RPCs, in JSON format")
-	cmdRoot.Flags.StringVar(&rateAclSenderJson, "rate-acl-sender", `[{"acl":{"In":["..."]},"limit":10}]`, "The RateAcl to authorize the sender of incoming messages, in JSON format")
+	cmdRoot.Flags.IntVar(&maxActivePeers, "max-active-peers", 2, "The maximum number of peers to send updates to concurrently.")
+	cmdRoot.Flags.IntVar(&maxHops, "max-hops", 50, "The maximum number of hops that a message can go through.")
+	cmdRoot.Flags.StringVar(&rateAclInJson, "rate-acl-in", `[{"acl":{"In":["..."]},"limit":20}]`, "The RateAcl to authorize incoming RPCs, in JSON format")
+	cmdRoot.Flags.StringVar(&rateAclOutJson, "rate-acl-out", `[{"acl":{"In":["..."]},"limit":100}]`, "The RateAcl to authorize outgoing RPCs, in JSON format")
+	cmdRoot.Flags.StringVar(&rateAclSenderJson, "rate-acl-sender", `[{"acl":{"In":["..."]},"limit":100}]`, "The RateAcl to authorize the sender of incoming messages, in JSON format")
 	cmdRoot.Flags.StringVar(&encryptionKey, "encryption-key", defaultEncryptionKey, "Messages are encrypted with AES256 using this key")
 
 	cmdChat.Flags.StringVar(&incomingDir, "incoming-dir", os.TempDir(), "The directory where to save incoming files")
@@ -227,8 +227,8 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		historyView.Write([]byte(color.RedString("*** Messages are encrypted with the default key. They are NOT private.")))
 	}
 	historyView.Write([]byte("***"))
-	historyView.Write([]byte("*** Messages are stored and relayed peer-to-peer for one hour after they are"))
-	historyView.Write([]byte("*** created. New peers will see up to one hour of history when they join."))
+	historyView.Write([]byte("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are"))
+	historyView.Write([]byte("*** created. New peers will see up to 15 minutes of history when they join."))
 	historyView.Write([]byte("***"))
 	historyView.Write([]byte("*** Use /send <filename> to send a file."))
 	historyView.Write([]byte("***"))
@@ -250,18 +250,15 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				continue
 			}
 
+			delta := time.Since(msg.CreationTime).Seconds()
+			hops := len(msg.Hops)
 			var buf bytes.Buffer
+			fmt.Fprintf(&buf, "%s %2d %5.2fs ", msg.CreationTime.Local().Format("15:04:05"), hops, delta)
 			if msgText != "" {
-				fmt.Fprintf(&buf, "%s <%s> %s\n",
-					msg.CreationTime.Local().Format("2006-01-02 15:04:05"),
-					msg.SenderBlessings,
-					msgText)
+				fmt.Fprintf(&buf, "<%s> %s", msg.SenderBlessings, msgText)
 			}
 			if filename != "" {
-				fmt.Fprintf(&buf, "%s Received file from %s: %s\n",
-					msg.CreationTime.Local().Format("2006-01-02 15:04:05"),
-					msg.SenderBlessings,
-					filename)
+				fmt.Fprintf(&buf, "Received file from %s: %s", msg.SenderBlessings, filename)
 			}
 
 			width, height := historyView.Size()
@@ -326,7 +323,7 @@ func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerSt
 	}
 	msg.Id = msgId
 	msg.SenderBlessings, _ = p.BlessingStore().Default()
-	msg.Lifespan = time.Hour
+	msg.Lifespan = 15 * time.Minute
 	msg.Signature, err = p.Sign(msg.Hash())
 	if err != nil {
 		return err

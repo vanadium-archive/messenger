@@ -46,12 +46,28 @@ type peerManager struct {
 }
 
 func (pm *peerManager) loop(ctx *context.T, updateChan <-chan discovery.Update) {
-	for update := range updateChan {
-		pm.processDiscoveryUpdate(ctx, update)
-		pm.checkActivePeers(ctx)
+	var changed bool
+	for {
+		select {
+		case update, ok := <-updateChan:
+			if !ok {
+				pm.removePeer(ctx, "")
+				close(pm.done)
+				return
+			}
+			pm.processDiscoveryUpdate(ctx, update)
+			changed = true
+		case <-time.After(time.Second):
+			// Updates tend to arrive in batches. Calling
+			// checkActivePeers on a timer makes its cost
+			// independent of the number of updates received in
+			// the interval.
+			if changed {
+				pm.checkActivePeers(ctx)
+				changed = false
+			}
+		}
 	}
-	pm.removePeer(ctx, "")
-	close(pm.done)
 }
 
 // processDiscoveryUpdate adds and removes peers as reported in the discovery
@@ -229,18 +245,19 @@ func (p *peer) checkHops(ctx *context.T, msg *ifc.Message) error {
 }
 
 func (p *peer) subLoop() {
+	ctx := p.ctx
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		case msg := <-p.psChan:
 			if msg == nil {
 				return
 			}
-			if p.checkHops(p.ctx, msg) != nil {
+			if p.checkHops(ctx, msg) != nil {
 				continue
 			}
-			p.queue.Insert(time.Now(), msg.Id)
+			p.queue.Insert(msg.CreationTime, msg.Id)
 		}
 	}
 }
@@ -248,8 +265,7 @@ func (p *peer) subLoop() {
 func (p *peer) msgLoop() {
 	ctx := p.ctx
 	for {
-		if err := p.diffAndEnqueue(p.ctx); err != nil {
-			p.ctx.Errorf("diffAndEnqueue failed: %v", err)
+		if err := backoff(p.ctx, func() error { return p.diffAndEnqueue(p.ctx) }); err != nil {
 			select {
 			case <-p.ctx.Done():
 				close(p.done)
@@ -280,9 +296,7 @@ func (p *peer) msgLoop() {
 		}
 		pi.NumAttempts++
 
-		err := p.pushMessage(ctx, msgId)
-
-		switch {
+		switch err := p.pushMessage(ctx, msgId); {
 		case err == nil:
 			pi.Sent = true
 			p.counters.numMessagesSent.Incr(1)
@@ -310,12 +324,6 @@ func (p *peer) msgLoop() {
 			pi.FatalError = true
 		case verror.ErrorID(err) == verror.ErrNoExist.ID:
 			pi.FatalError = true
-		case verror.ErrorID(err) == ifc.ErrRateLimitExceeded.ID:
-			select {
-			case <-ctx.Done():
-			case <-time.After(time.Second):
-			}
-			fallthrough
 		default:
 			const maxBackoff = 5 * time.Minute
 			n := uint(pi.NumAttempts)
@@ -328,7 +336,7 @@ func (p *peer) msgLoop() {
 			p.queue.Insert(pi.NextAttempt, msgId)
 		}
 		if err := p.store.SetPeerInfo(ctx, msgId, p.peerId, pi); err != nil {
-			ctx.Errorf("store.SetPeerInfo failed: %v", err)
+			ctx.Infof("store.SetPeerInfo failed: %v", err)
 		}
 	}
 }
@@ -351,9 +359,17 @@ func (p *peer) pushMessage(ctx *context.T, msgId string) error {
 	}
 
 	offset := int64(0)
+	fPush := func() error {
+		return p.doPush(ctx, msg, offset, r, opts)
+	}
 push:
-	if err = p.doPush(ctx, msg, offset, r, opts); verror.ErrorID(err) == ifc.ErrIncorrectOffset.ID {
-		if offset, err = ifc.MessengerClient("").ResumeOffset(ctx, msg, opts...); err != nil {
+	if err = backoff(ctx, fPush); verror.ErrorID(err) == ifc.ErrIncorrectOffset.ID {
+		fOffset := func() error {
+			var err error
+			offset, err = ifc.MessengerClient("").ResumeOffset(ctx, msg, opts...)
+			return err
+		}
+		if err = backoff(ctx, fOffset); err != nil {
 			return err
 		}
 		if _, err := r.Seek(offset, 0); err != nil {
@@ -362,6 +378,25 @@ push:
 		goto push
 	}
 	return err
+}
+
+func backoff(ctx *context.T, f func() error) (err error) {
+	for n := uint(0); ; n++ {
+		if err = f(); verror.Action(err) == verror.RetryBackoff {
+			const maxBackoff = time.Minute
+			// This is (100 to 200) * 2^n ms.
+			backoff := time.Duration((100+rand.Intn(100))<<n) * time.Millisecond
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(backoff):
+			}
+			continue
+		}
+		return
+	}
 }
 
 func (p *peer) doPush(ctx *context.T, msg ifc.Message, offset int64, r io.Reader, opts []rpc.CallOpt) error {
@@ -457,7 +492,7 @@ func (p *peer) diffAndEnqueue(ctx *context.T) error {
 			if hasIt {
 				pi.Sent = true
 				if err := p.store.SetPeerInfo(ctx, id, p.peerId, pi); err != nil {
-					ctx.Errorf("store.SetPeerInfo failed: %v", err)
+					ctx.Infof("store.SetPeerInfo failed: %v", err)
 				}
 				continue
 			}
@@ -468,9 +503,6 @@ func (p *peer) diffAndEnqueue(ctx *context.T) error {
 		return nil
 	}
 	if err := call.SendStream().Close(); err != nil {
-		return err
-	}
-	if err := call.RecvStream().Err(); err != nil && err != io.EOF {
 		return err
 	}
 	return call.Finish()
