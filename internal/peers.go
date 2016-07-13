@@ -342,6 +342,7 @@ func (p *peer) msgLoop() {
 }
 
 func (p *peer) pushMessage(ctx *context.T, msgId string) error {
+	ctx.Infof("Pushing %s to %s", msgId, p.peerId)
 	msg, r, err := p.store.OpenRead(ctx, msgId)
 	if err != nil {
 		return err

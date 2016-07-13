@@ -17,6 +17,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,6 +194,28 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		return err
 	}
 
+	help := func() {
+		historyView.Write([]byte("*** Welcome to Vanadium Peer to Peer Chat ***"))
+		historyView.Write([]byte("***"))
+		historyView.Write([]byte(color.RedString("*** This is a demo application.")))
+		historyView.Write([]byte("***"))
+		if encryptionKey == defaultEncryptionKey {
+			historyView.Write([]byte(color.RedString("*** Messages are encrypted with the default key. They are NOT private.")))
+		}
+		historyView.Write([]byte("***"))
+		historyView.Write([]byte("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are"))
+		historyView.Write([]byte("*** created. New peers will see up to 15 minutes of history when they join."))
+		historyView.Write([]byte("***"))
+		historyView.Write([]byte("*** Available commands are:"))
+		historyView.Write([]byte("***   /help to see this help message"))
+		historyView.Write([]byte("***   /ping to send a ping"))
+		historyView.Write([]byte("***   /send <filename> to send a file"))
+		historyView.Write([]byte("***"))
+		historyView.Write([]byte("*** Press Ctrl-C to exit."))
+		historyView.Write([]byte("***"))
+		g.Flush()
+	}
+
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
 			return gocui.Quit
@@ -202,39 +225,36 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 	}
 	if err := g.SetKeybinding("messageInput", gocui.KeyEnter, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
+			defer g.Flush()
 			mtxt := strings.TrimSpace(v.Buffer())
-			fname := ""
 			v.Clear()
-			if strings.HasPrefix(mtxt, "/send") {
+			if mtxt == "" {
+				return nil
+			}
+			fname := ""
+			switch {
+			case mtxt == "/clear":
+				historyView.Clear()
+				return nil
+			case mtxt == "/help":
+				help()
+				return nil
+			case mtxt == "/ping":
+				mtxt = fmt.Sprintf("\x01PING %d", time.Now().UnixNano())
+			case strings.HasPrefix(mtxt, "/send"):
 				fname = strings.TrimSpace(mtxt[5:])
 				mtxt = ""
 			}
 			if err := sendMessage(ctx, ps, params.Store, mtxt, fname); err != nil {
 				fmt.Fprintf(historyView, "## sendMessage failed: %v\n", err)
 			}
-			g.Flush()
 			return nil
 		},
 	); err != nil {
 		return err
 	}
 
-	historyView.Write([]byte("*** Welcome to Vanadium Peer to Peer Chat ***"))
-	historyView.Write([]byte("***"))
-	historyView.Write([]byte(color.RedString("*** This is a demo application.")))
-	historyView.Write([]byte("***"))
-	if encryptionKey == defaultEncryptionKey {
-		historyView.Write([]byte(color.RedString("*** Messages are encrypted with the default key. They are NOT private.")))
-	}
-	historyView.Write([]byte("***"))
-	historyView.Write([]byte("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are"))
-	historyView.Write([]byte("*** created. New peers will see up to 15 minutes of history when they join."))
-	historyView.Write([]byte("***"))
-	historyView.Write([]byte("*** Use /send <filename> to send a file."))
-	historyView.Write([]byte("***"))
-	historyView.Write([]byte("*** Press Ctrl-C to exit."))
-	historyView.Write([]byte("***"))
-	g.Flush()
+	help()
 
 	go func() {
 		for msg := range ps.Sub() {
@@ -255,7 +275,20 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			var buf bytes.Buffer
 			fmt.Fprintf(&buf, "%s %2d %5.2fs ", msg.CreationTime.Local().Format("15:04:05"), hops, delta)
 			if msgText != "" {
-				fmt.Fprintf(&buf, "<%s> %s", msg.SenderBlessings, msgText)
+				if strings.HasPrefix(msgText, "\x01PING") {
+					fmt.Fprintf(&buf, "PING from %s", msg.SenderBlessings)
+					reply := "\x01PONG" + msgText[5:]
+					if err := sendMessage(ctx, ps, params.Store, reply, ""); err != nil {
+						ctx.Errorf("sendMessage failed: %v", err)
+					}
+				} else if strings.HasPrefix(msgText, "\x01PONG ") {
+					if i, err := strconv.ParseInt(msgText[6:], 10, 64); err == nil {
+						t := time.Unix(0, i)
+						fmt.Fprintf(&buf, "PING reply from %s: %s", msg.SenderBlessings, time.Since(t))
+					}
+				} else {
+					fmt.Fprintf(&buf, "<%s> %s", msg.SenderBlessings, msgText)
+				}
 			}
 			if filename != "" {
 				fmt.Fprintf(&buf, "Received file from %s: %s", msg.SenderBlessings, filename)
@@ -304,6 +337,28 @@ func runRobot(ctx *context.T, env *cmdline.Env, args []string) error {
 		}
 	}()
 
+	go func() {
+		for msg := range ps.Sub() {
+			_, r, err := params.Store.OpenRead(ctx, msg.Id)
+			if err != nil {
+				continue
+			}
+			msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
+			r.Close()
+			if err != nil {
+				ctx.Infof("decryptChatMessage failed: %v", err)
+				continue
+			}
+			ctx.Infof("Incoming message from %s %q %q", msg.SenderBlessings, msgText, filename)
+			if strings.HasPrefix(msgText, "\x01PING") {
+				reply := "\x01PONG" + msgText[5:]
+				if err := sendMessage(ctx, ps, params.Store, reply, ""); err != nil {
+					ctx.Errorf("sendMessage failed: %v", err)
+				}
+			}
+		}
+	}()
+
 	<-signals.ShutdownOnSignals(ctx)
 	return nil
 }
@@ -345,6 +400,7 @@ func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerSt
 	if err := w.Close(); err != nil {
 		return err
 	}
+	ctx.Infof("New message id %s stored", msg.Id)
 	ps.Pub(msg)
 	return nil
 }

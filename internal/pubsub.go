@@ -46,7 +46,9 @@ func (ps *PubSub) Pub(msg ifc.Message) {
 func (ps *PubSub) Sub() chan *ifc.Message {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ch := make(chan *ifc.Message)
+	// This channel is buffered to allow publishing messages from the same
+	// goroutine that subscribes to new messages.
+	ch := make(chan *ifc.Message, 10)
 	ps.out[ch] = struct{}{}
 	return ch
 }
