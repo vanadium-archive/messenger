@@ -95,6 +95,15 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		return err
 	}
 
+	scrollDown := func() {
+		_, height := historyView.Size()
+		numLines := historyView.NumberOfLines()
+		if numLines > height {
+			historyView.SetOrigin(0, numLines-height)
+		}
+		g.Flush()
+	}
+
 	help := func() {
 		historyView.Write([]byte("*** Welcome to Vanadium Peer to Peer Chat ***"))
 		historyView.Write([]byte("***"))
@@ -115,7 +124,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		historyView.Write([]byte("***"))
 		historyView.Write([]byte("*** Type /quit or press Ctrl-C to exit."))
 		historyView.Write([]byte("***"))
-		g.Flush()
+		scrollDown()
 	}
 
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, 0,
@@ -127,7 +136,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 	}
 	if err := g.SetKeybinding("messageInput", gocui.KeyEnter, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
-			defer g.Flush()
+			defer scrollDown()
 			mtxt := strings.TrimSpace(v.Buffer())
 			v.Clear()
 			if mtxt == "" {
@@ -202,13 +211,9 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				fmt.Fprintf(&buf, "Received file from %s: %s", msg.SenderBlessings, filename)
 			}
 
-			width, height := historyView.Size()
+			width, _ := historyView.Size()
 			historyView.Write(text.WrapBytes(buf.Bytes(), width))
-			numLines := historyView.NumberOfLines()
-			if numLines > height {
-				historyView.SetOrigin(0, numLines-height)
-			}
-			g.Flush()
+			scrollDown()
 		}
 	}()
 
