@@ -6,6 +6,8 @@ package internal
 
 import (
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -90,43 +92,66 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 		return nil, err
 	}
 
-	if ls := v23.GetListenSpec(ctx); ls.Proxy != "" {
-		// Wait for proxied address
-		for {
-			status := server.Status()
-			err, ok := status.ProxyErrors[ls.Proxy]
-			if !ok {
-				<-status.Dirty
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			break
-		}
-	}
-
-	ad := &discovery.Advertisement{
-		Id:            adId,
-		InterfaceName: ifcName,
-	}
-	for _, ep := range server.Status().Endpoints {
-		ad.Addresses = append(ad.Addresses, naming.JoinAddressName(ep.String(), ""))
-	}
-
 	counters := NewCounters(adId.String())
 	dones := []<-chan struct{}{}
 	pms := []*peerManager{}
+
+	// advertise restarts the advertisement when the server's endpoints
+	// change.
+	advertise := func(ctx *context.T, disc discovery.T) <-chan struct{} {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			status := server.Status()
+			ad := &discovery.Advertisement{
+				Id:            adId,
+				InterfaceName: ifcName,
+			}
+			for _, ep := range status.Endpoints {
+				ad.Addresses = append(ad.Addresses, naming.JoinAddressName(ep.String(), ""))
+			}
+			sort.Strings(ad.Addresses)
+			ctx.Infof("Starting advertisement: %v", ad)
+
+			for exit := false; !exit; {
+				adCtx, adCancel := context.WithCancel(ctx)
+				adDone, err := disc.Advertise(adCtx, ad, nil)
+				if err != nil {
+					ctx.Errorf("disc.Advertise failed: %v", err)
+					return
+				}
+			change:
+				for {
+					select {
+					case <-ctx.Done():
+						exit = true
+						break change
+					case <-status.Dirty:
+						status = server.Status()
+						addr := []string{}
+						for _, ep := range status.Endpoints {
+							addr = append(addr, naming.JoinAddressName(ep.String(), ""))
+						}
+						sort.Strings(addr)
+						if !reflect.DeepEqual(ad.Addresses, addr) {
+							ad.Addresses = addr
+							ctx.Infof("Restarting advertisement: %v", ad)
+							break change
+						}
+					}
+				}
+				adCancel()
+				<-adDone
+			}
+		}()
+		return done
+	}
 
 	startDiscovery := func(disc discovery.T, err error) error {
 		if err != nil {
 			return err
 		}
-		done, err := disc.Advertise(ctx, ad, nil)
-		if err != nil {
-			return err
-		}
-		dones = append(dones, done)
+		dones = append(dones, advertise(ctx, disc))
 		updateChan, err := disc.Scan(ctx, fmt.Sprintf(`v.InterfaceName="%s"`, ifcName))
 		if err != nil {
 			return err
