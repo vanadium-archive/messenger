@@ -68,9 +68,9 @@ func main() {
 	cmdRoot.Flags.StringVar(&storeDir, "store-dir", "", "The name of the local directory where to store the messages.")
 	cmdRoot.Flags.IntVar(&maxActivePeers, "max-active-peers", 2, "The maximum number of peers to send updates to concurrently.")
 	cmdRoot.Flags.IntVar(&maxHops, "max-hops", 50, "The maximum number of hops that a message can go through.")
-	cmdRoot.Flags.StringVar(&rateAclInJson, "rate-acl-in", `[{"acl":{"In":["..."]},"limit":20}]`, "The RateAcl to authorize incoming RPCs, in JSON format")
-	cmdRoot.Flags.StringVar(&rateAclOutJson, "rate-acl-out", `[{"acl":{"In":["..."]},"limit":100}]`, "The RateAcl to authorize outgoing RPCs, in JSON format")
-	cmdRoot.Flags.StringVar(&rateAclSenderJson, "rate-acl-sender", `[{"acl":{"In":["..."]},"limit":100}]`, "The RateAcl to authorize the sender of incoming messages, in JSON format")
+	cmdRoot.Flags.StringVar(&rateAclInJson, "rate-acl-in", `[{"acl":{"In":["dev.v.io"]},"limit":20}]`, "The RateAcl to authorize incoming RPCs, in JSON format")
+	cmdRoot.Flags.StringVar(&rateAclOutJson, "rate-acl-out", `[{"acl":{"In":["dev.v.io"]},"limit":100}]`, "The RateAcl to authorize outgoing RPCs, in JSON format")
+	cmdRoot.Flags.StringVar(&rateAclSenderJson, "rate-acl-sender", `[{"acl":{"In":["dev.v.io"]},"limit":100}]`, "The RateAcl to authorize the sender of incoming messages, in JSON format")
 	cmdRoot.Flags.StringVar(&encryptionKey, "encryption-key", defaultEncryptionKey, "Messages are encrypted with AES256 using this key")
 
 	cmdChat.Flags.StringVar(&incomingDir, "incoming-dir", os.TempDir(), "The directory where to save incoming files")

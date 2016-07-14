@@ -27,6 +27,7 @@ import (
 	"v.io/v23/context"
 
 	"v.io/x/lib/cmdline"
+	lsec "v.io/x/ref/lib/security"
 	"v.io/x/ref/lib/v23cmd"
 
 	"messenger/internal"
@@ -233,6 +234,12 @@ func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerSt
 	msg.Id = msgId
 	msg.SenderBlessings, _ = p.BlessingStore().Default()
 	msg.Lifespan = 15 * time.Minute
+	var expiry time.Time
+	if msg.SenderDischarges, expiry = lsec.PrepareDischarges(ctx, msg.SenderBlessings, nil, "", nil); !expiry.IsZero() {
+		if d := expiry.Sub(time.Now()); d < msg.Lifespan {
+			msg.Lifespan = d
+		}
+	}
 	msg.Signature, err = p.Sign(msg.Hash())
 	if err != nil {
 		return err
