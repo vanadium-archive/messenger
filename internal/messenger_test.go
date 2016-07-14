@@ -49,13 +49,13 @@ func startServer(ctx *context.T, t *testing.T, params internal.Params) (string, 
 	params.RateAclOut = rateacl
 	params.RateAclSender = rateacl
 
-	server, _, stop, err := internal.StartNode(ctx, params)
+	node, err := internal.StartNode(ctx, params)
 	if err != nil {
 		t.Fatalf("internal.StartNode failed: %v", err)
 		return "", "", nil
 	}
-	ep := server.Status().Endpoints[0].String()
-	return naming.JoinAddressName(ep, ""), params.AdvertisementID, stop
+	ep := node.Server().Status().Endpoints[0].String()
+	return naming.JoinAddressName(ep, ""), params.AdvertisementID, node.Stop
 }
 
 func TestPush(t *testing.T) {

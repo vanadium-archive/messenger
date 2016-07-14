@@ -5,6 +5,7 @@
 package internal
 
 import (
+	"fmt"
 	"io"
 	"math/rand"
 	"sort"
@@ -21,7 +22,7 @@ import (
 	"messenger/ifc"
 )
 
-func startPeerManager(ctx *context.T, id string, updateChan <-chan discovery.Update, ps *PubSub, store MessengerStorage, params Params, counters *Counters) <-chan struct{} {
+func startPeerManager(ctx *context.T, id string, updateChan <-chan discovery.Update, ps *PubSub, store MessengerStorage, params Params, counters *Counters) *peerManager {
 	pm := &peerManager{
 		id:       id,
 		store:    store,
@@ -32,10 +33,11 @@ func startPeerManager(ctx *context.T, id string, updateChan <-chan discovery.Upd
 		done:     make(chan struct{}),
 	}
 	go pm.loop(ctx, updateChan)
-	return pm.done
+	return pm
 }
 
 type peerManager struct {
+	mu       sync.Mutex
 	id       string
 	store    MessengerStorage
 	params   Params
@@ -43,6 +45,19 @@ type peerManager struct {
 	ps       *PubSub
 	counters *Counters
 	done     chan struct{}
+}
+
+func (pm *peerManager) debugString() string {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	active := []string{}
+	for _, p := range pm.peers {
+		if p.ctx != nil {
+			active = append(active, p.debugString())
+		}
+	}
+	return fmt.Sprintf("PeerManager ID:%s MaxActivePeers:%d NumPeers:%d Active:%v",
+		pm.id, pm.params.MaxActivePeers, len(pm.peers), active)
 }
 
 func (pm *peerManager) loop(ctx *context.T, updateChan <-chan discovery.Update) {
@@ -73,6 +88,8 @@ func (pm *peerManager) loop(ctx *context.T, updateChan <-chan discovery.Update) 
 // processDiscoveryUpdate adds and removes peers as reported in the discovery
 // update.
 func (pm *peerManager) processDiscoveryUpdate(ctx *context.T, update discovery.Update) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	id := update.Id().String()
 	if update.IsLost() {
 		ctx.Infof("%s lost peer %s", pm.id, id)
@@ -124,6 +141,8 @@ func (pm *peerManager) processDiscoveryUpdate(ctx *context.T, update discovery.U
 // When a power of 2 falls on a neighbor that was already selected, the next
 // unselected neighbor is selected instead.
 func (pm *peerManager) checkActivePeers(ctx *context.T) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	if pm.params.MaxActivePeers == 0 || len(pm.peers) < pm.params.MaxActivePeers {
 		for _, p := range pm.peers {
 			pm.startPeer(ctx, p)
@@ -217,6 +236,14 @@ type peer struct {
 	// mu guards me
 	mu sync.Mutex
 	me *naming.MountEntry
+}
+
+func (p *peer) debugString() string {
+	l := 0
+	if p.queue != nil {
+		l = p.queue.Len()
+	}
+	return fmt.Sprintf("Peer ID:%s QueueLen:%d", p.peerId, l)
 }
 
 func (p *peer) setMountEntry(me *naming.MountEntry) {

@@ -37,6 +37,12 @@ type msgQueueElement struct {
 	msgId string
 }
 
+func (q *MsgQueue) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.l.Len()
+}
+
 // Empty returns whether this queue is empty.
 func (q *MsgQueue) Empty() bool {
 	q.mu.Lock()

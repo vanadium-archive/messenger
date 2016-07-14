@@ -6,6 +6,7 @@ package internal
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"v.io/v23"
@@ -39,7 +40,34 @@ type Params struct {
 	Store                MessengerStorage
 }
 
-func StartNode(ctx *context.T, params Params) (rpc.Server, *PubSub, func(), error) {
+type Node struct {
+	server rpc.Server
+	ps     *PubSub
+	pms    []*peerManager
+	cancel func()
+}
+
+func (n *Node) Server() rpc.Server {
+	return n.server
+}
+
+func (n *Node) PubSub() *PubSub {
+	return n.ps
+}
+
+func (n *Node) Stop() {
+	n.cancel()
+}
+
+func (n *Node) DebugString() string {
+	s := []string{}
+	for _, pm := range n.pms {
+		s = append(s, pm.debugString())
+	}
+	return strings.Join(s, ", ")
+}
+
+func StartNode(ctx *context.T, params Params) (*Node, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	ps := newPubSub(ctx)
@@ -54,12 +82,12 @@ func StartNode(ctx *context.T, params Params) (rpc.Server, *PubSub, func(), erro
 		adId, err = discovery.NewAdId()
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	ctx, server, err := v23.WithNewServer(ctx, "", ifc.MessengerRepositoryServer(m), security.AllowEveryone())
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	if ls := v23.GetListenSpec(ctx); ls.Proxy != "" {
@@ -72,7 +100,7 @@ func StartNode(ctx *context.T, params Params) (rpc.Server, *PubSub, func(), erro
 				continue
 			}
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, err
 			}
 			break
 		}
@@ -88,6 +116,7 @@ func StartNode(ctx *context.T, params Params) (rpc.Server, *PubSub, func(), erro
 
 	counters := NewCounters(adId.String())
 	dones := []<-chan struct{}{}
+	pms := []*peerManager{}
 
 	startDiscovery := func(disc discovery.T, err error) error {
 		if err != nil {
@@ -102,28 +131,29 @@ func StartNode(ctx *context.T, params Params) (rpc.Server, *PubSub, func(), erro
 		if err != nil {
 			return err
 		}
-		done = startPeerManager(ctx, adId.String(), updateChan, ps, params.Store, params, counters)
-		dones = append(dones, done)
+		pm := startPeerManager(ctx, adId.String(), updateChan, ps, params.Store, params, counters)
+		dones = append(dones, pm.done)
+		pms = append(pms, pm)
 		return nil
 	}
 
 	if params.EnableLocalDiscovery {
 		if err := startDiscovery(v23.NewDiscovery(ctx)); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 	}
 
 	for _, path := range params.GlobalDiscoveryPaths {
 		if err := startDiscovery(global.NewWithTTL(ctx, path, params.MountTTL, params.ScanInterval)); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 	}
 
-	return server, ps, func() {
+	return &Node{server, ps, pms, func() {
 		cancel()
 		<-ps.done
 		for _, done := range dones {
 			<-done
 		}
-	}, nil
+	}}, nil
 }
