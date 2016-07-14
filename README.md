@@ -168,8 +168,14 @@ It runs a Messenger Node to exchange text messages and files with other
 Messenger Nodes.
 
 ```
+# Create credentials
+jiri go install v.io/x/ref/cmd/principal
+$JIRI_ROOT/release/go/bin/principal create $HOME/.vmsg-creds
+$JIRI_ROOT/release/go/bin/principal --v23.credentials=$HOME/.vmsg-creds seekblessings
+
+# Start chat app
 jiri go install messenger/vmsg
-$JIRI_ROOT/release/projects/go/bin/vmsg chat --store-dir=/tmp/store
+$JIRI_ROOT/release/projects/go/bin/vmsg chat --v23.credentials=$HOME/.vmsg-creds --store-dir=/tmp/store
 ```
 
 [RFC 4838]: https://tools.ietf.org/html/rfc4838
