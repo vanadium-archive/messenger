@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -134,6 +135,9 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 	); err != nil {
 		return err
 	}
+
+	pingId := fmt.Sprintf("%08x", rand.Uint32())
+
 	if err := g.SetKeybinding("messageInput", gocui.KeyEnter, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
 			defer scrollDown()
@@ -152,7 +156,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				help()
 				return nil
 			case mtxt == "/ping":
-				mtxt = fmt.Sprintf("\x01PING %d", time.Now().UnixNano())
+				mtxt = fmt.Sprintf("\x01PING %s %d", pingId, time.Now().UnixNano())
 			case mtxt == "/quit":
 				return gocui.Quit
 			case strings.HasPrefix(mtxt, "/send"):
@@ -199,7 +203,11 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 						ctx.Errorf("sendMessage failed: %v", err)
 					}
 				} else if strings.HasPrefix(msgText, "\x01PONG ") {
-					if i, err := strconv.ParseInt(msgText[6:], 10, 64); err == nil {
+					p := strings.Split(msgText, " ")
+					if len(p) != 3 || p[1] != pingId {
+						continue
+					}
+					if i, err := strconv.ParseInt(p[2], 10, 64); err == nil {
 						t := time.Unix(0, i)
 						fmt.Fprintf(&buf, "PING reply from %s: %s", msg.SenderBlessings, time.Since(t))
 					}
