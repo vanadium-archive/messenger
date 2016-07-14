@@ -30,11 +30,11 @@ The vmsg flags are:
    The maximum number of peers to send updates to concurrently.
  -max-hops=50
    The maximum number of hops that a message can go through.
- -rate-acl-in=[{"acl":{"In":["..."]},"limit":20}]
+ -rate-acl-in=[{"acl":{"In":["dev.v.io"]},"limit":20}]
    The RateAcl to authorize incoming RPCs, in JSON format
- -rate-acl-out=[{"acl":{"In":["..."]},"limit":100}]
+ -rate-acl-out=[{"acl":{"In":["dev.v.io"]},"limit":100}]
    The RateAcl to authorize outgoing RPCs, in JSON format
- -rate-acl-sender=[{"acl":{"In":["..."]},"limit":100}]
+ -rate-acl-sender=[{"acl":{"In":["dev.v.io"]},"limit":100}]
    The RateAcl to authorize the sender of incoming messages, in JSON format
  -store-dir=
    The name of the local directory where to store the messages.
