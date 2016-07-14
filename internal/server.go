@@ -118,7 +118,13 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 				adDone, err := disc.Advertise(adCtx, ad, nil)
 				if err != nil {
 					ctx.Errorf("disc.Advertise failed: %v", err)
-					return
+					adCancel()
+					select {
+					case <-ctx.Done():
+						exit = true
+					case <-time.After(10 * time.Second):
+					}
+					continue
 				}
 			change:
 				for {
