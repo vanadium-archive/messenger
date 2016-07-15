@@ -18,6 +18,7 @@ import (
 type Messenger struct {
 	Params   Params
 	Notifier *PubSub
+	Counters *Counters
 }
 
 func (m *Messenger) Diff(ctx *context.T, call ifc.MessengerDiffServerCall) error {
@@ -83,6 +84,7 @@ func (m *Messenger) Push(ctx *context.T, call ifc.MessengerPushServerCall, msg i
 			return err
 		}
 		size += int64(len(packet))
+		m.Counters.numBytesReceived.Incr(int64(len(packet)))
 	}
 	if err := call.RecvStream().Err(); err != nil && size != msg.Length {
 		// The stream was interrupted. We should keep the data that was
@@ -93,6 +95,7 @@ func (m *Messenger) Push(ctx *context.T, call ifc.MessengerPushServerCall, msg i
 	if err := w.Close(); err != nil {
 		return err
 	}
+	m.Counters.numMessagesReceived.Incr(1)
 	if m.Notifier != nil {
 		m.Notifier.Pub(msg)
 	}

@@ -43,10 +43,11 @@ type Params struct {
 }
 
 type Node struct {
-	server rpc.Server
-	ps     *PubSub
-	pms    []*peerManager
-	cancel func()
+	server   rpc.Server
+	ps       *PubSub
+	pms      []*peerManager
+	counters *Counters
+	cancel   func()
 }
 
 func (n *Node) Server() rpc.Server {
@@ -66,6 +67,14 @@ func (n *Node) DebugString() string {
 	for _, pm := range n.pms {
 		s = append(s, pm.debugString())
 	}
+	s = append(s, fmt.Sprintf("Counters: num-peers:%d num-messages-sent:%d num-bytes-sent:%d num-messages-received:%d num-bytes-received:%d",
+		n.counters.numPeers.Value(),
+		n.counters.numMessagesSent.Value(),
+		n.counters.numBytesSent.Value(),
+		n.counters.numMessagesReceived.Value(),
+		n.counters.numBytesReceived.Value(),
+	))
+
 	return strings.Join(s, ", ")
 }
 
@@ -73,7 +82,6 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	ps := newPubSub(ctx)
-	m := &Messenger{Params: params, Notifier: ps}
 
 	var adId discovery.AdId
 
@@ -86,13 +94,14 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	counters := NewCounters(adId.String())
+	m := &Messenger{Params: params, Notifier: ps, Counters: counters}
 
 	ctx, server, err := v23.WithNewServer(ctx, "", ifc.MessengerRepositoryServer(m), security.AllowEveryone())
 	if err != nil {
 		return nil, err
 	}
 
-	counters := NewCounters(adId.String())
 	dones := []<-chan struct{}{}
 	pms := []*peerManager{}
 
@@ -180,7 +189,7 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 		}
 	}
 
-	return &Node{server, ps, pms, func() {
+	return &Node{server, ps, pms, counters, func() {
 		cancel()
 		<-ps.done
 		for _, done := range dones {

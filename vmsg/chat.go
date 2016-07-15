@@ -96,8 +96,17 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		return err
 	}
 
-	scrollDown := func() {
-		_, height := historyView.Size()
+	clear := func() {
+		historyView.Clear()
+		historyView.SetOrigin(0, 0)
+		g.Flush()
+	}
+
+	print := func(s ...string) {
+		width, height := historyView.Size()
+		for _, t := range s {
+			historyView.Write(text.WrapBytes([]byte(t), width))
+		}
 		numLines := historyView.NumberOfLines()
 		if numLines > height {
 			historyView.SetOrigin(0, numLines-height)
@@ -105,27 +114,35 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		g.Flush()
 	}
 
+	printf := func(format string, args ...interface{}) {
+		print(fmt.Sprintf(format, args...))
+	}
+
+	debug := func() {
+		printf("### %s", node.DebugString())
+	}
+
 	help := func() {
-		historyView.Write([]byte("*** Welcome to Vanadium Peer to Peer Chat ***"))
-		historyView.Write([]byte("***"))
-		historyView.Write([]byte(color.RedString("*** This is a demo application.")))
-		historyView.Write([]byte("***"))
+		print("*** Welcome to Vanadium Peer to Peer Chat ***")
+		print("***")
+		print(color.RedString("*** This is a demo application."))
+		print("***")
 		if encryptionKey == defaultEncryptionKey {
-			historyView.Write([]byte(color.RedString("*** Messages are encrypted with the default key. They are NOT private.")))
+			print(color.RedString("*** Messages are encrypted with the default key. They are NOT private."))
 		}
-		historyView.Write([]byte("***"))
-		historyView.Write([]byte("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are"))
-		historyView.Write([]byte("*** created. New peers will see up to 15 minutes of history when they join."))
-		historyView.Write([]byte("***"))
-		historyView.Write([]byte("*** Available commands are:"))
-		historyView.Write([]byte("***   /help to see this help message"))
-		historyView.Write([]byte("***   /ping to send a ping"))
-		historyView.Write([]byte("***   /quit to exit"))
-		historyView.Write([]byte("***   /send <filename> to send a file"))
-		historyView.Write([]byte("***"))
-		historyView.Write([]byte("*** Type /quit or press Ctrl-C to exit."))
-		historyView.Write([]byte("***"))
-		scrollDown()
+		print("***")
+		print("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are")
+		print("*** created. New peers will see up to 15 minutes of history when they join.")
+		print("***")
+		print("*** Available commands are:")
+		print("***   /debug to show the local node's debug information")
+		print("***   /help to see this help message")
+		print("***   /ping to send a ping")
+		print("***   /quit to exit")
+		print("***   /send <filename> to send a file")
+		print("***")
+		print("*** Type /quit or press Ctrl-C to exit.")
+		print("***")
 	}
 
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, 0,
@@ -140,7 +157,6 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 
 	if err := g.SetKeybinding("messageInput", gocui.KeyEnter, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
-			defer scrollDown()
 			mtxt := strings.TrimSpace(v.Buffer())
 			v.Clear()
 			if mtxt == "" {
@@ -148,9 +164,11 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			}
 			fname := ""
 			switch {
+			case mtxt == "/debug":
+				debug()
+				return nil
 			case mtxt == "/clear":
-				historyView.Clear()
-				historyView.SetOrigin(0, 0)
+				clear()
 				return nil
 			case mtxt == "/help":
 				help()
@@ -163,11 +181,11 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				fname = strings.TrimSpace(mtxt[5:])
 				mtxt = ""
 			case strings.HasPrefix(mtxt, "/"):
-				fmt.Fprintf(historyView, "### Unknown command %s", mtxt)
+				printf("### Unknown command %s", mtxt)
 				return nil
 			}
 			if err := sendMessage(ctx, node.PubSub(), params.Store, mtxt, fname); err != nil {
-				fmt.Fprintf(historyView, "## sendMessage failed: %v\n", err)
+				printf("## sendMessage failed: %v\n", err)
 			}
 			return nil
 		},
@@ -186,8 +204,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
 			r.Close()
 			if err != nil {
-				fmt.Fprintf(historyView, "## decryptChatMessage failed: %v\n", err)
-				g.Flush()
+				printf("## decryptChatMessage failed: %v\n", err)
 				continue
 			}
 
@@ -218,10 +235,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 			if filename != "" {
 				fmt.Fprintf(&buf, "Received file from %s: %s", msg.SenderBlessings, filename)
 			}
-
-			width, _ := historyView.Size()
-			historyView.Write(text.WrapBytes(buf.Bytes(), width))
-			scrollDown()
+			print(buf.String())
 		}
 	}()
 

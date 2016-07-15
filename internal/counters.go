@@ -14,14 +14,18 @@ import (
 func NewCounters(id string) *Counters {
 	base := naming.Join("messenger", id)
 	return &Counters{
-		numPeers:        stats.NewCounter(naming.Join(base, "num-peers")),
-		numMessagesSent: stats.NewCounter(naming.Join(base, "num-peer-messages-sent")),
-		numBytesSent:    stats.NewCounter(naming.Join(base, "num-peer-bytes-sent")),
+		numPeers:            stats.NewCounter(naming.Join(base, "num-peers")),
+		numMessagesSent:     stats.NewCounter(naming.Join(base, "num-peer-messages-sent")),
+		numBytesSent:        stats.NewCounter(naming.Join(base, "num-peer-bytes-sent")),
+		numMessagesReceived: stats.NewCounter(naming.Join(base, "num-peer-messages-received")),
+		numBytesReceived:    stats.NewCounter(naming.Join(base, "num-peer-bytes-received")),
 	}
 }
 
 type Counters struct {
-	numPeers        *counter.Counter
-	numMessagesSent *counter.Counter
-	numBytesSent    *counter.Counter
+	numPeers            *counter.Counter
+	numMessagesSent     *counter.Counter
+	numBytesSent        *counter.Counter
+	numMessagesReceived *counter.Counter
+	numBytesReceived    *counter.Counter
 }
