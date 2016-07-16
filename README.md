@@ -178,6 +178,10 @@ jiri go install messenger/vmsg
 $JIRI_ROOT/release/projects/go/bin/vmsg chat --v23.credentials=$HOME/.vmsg-creds --store-dir=/tmp/store
 ```
 
+## Screenshot
+
+![Screenshot](diagrams/screenshot.png?raw=true)
+
 [RFC 4838]: https://tools.ietf.org/html/rfc4838
 [Discovery API]: https://github.com/vanadium/go.v23/blob/master/discovery/model.go
 [Messenger Interface]: ifc/service.vdl
