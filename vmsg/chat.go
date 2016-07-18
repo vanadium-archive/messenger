@@ -139,7 +139,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 		print("***   /help to see this help message")
 		print("***   /ping to send a ping")
 		print("***   /quit to exit")
-		print("***   /send <filename> to send a file")
+		print("***   /share <filename> to share a file")
 		print("***")
 		print("*** Type /quit or press Ctrl-C to exit.")
 		print("***")
@@ -177,8 +177,9 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				mtxt = fmt.Sprintf("\x01PING %s %d", pingId, time.Now().UnixNano())
 			case mtxt == "/quit":
 				return gocui.Quit
-			case strings.HasPrefix(mtxt, "/send"):
+			case strings.HasPrefix(mtxt, "/share"):
 				fname = strings.TrimSpace(mtxt[5:])
+				printf("### Sharing %s", fname)
 				mtxt = ""
 			case strings.HasPrefix(mtxt, "/"):
 				printf("### Unknown command %s", mtxt)
@@ -233,7 +234,7 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 				}
 			}
 			if filename != "" {
-				fmt.Fprintf(&buf, "Received file from %s: %s", msg.SenderBlessings, filename)
+				fmt.Fprintf(&buf, "Received shared file from %s: %s", msg.SenderBlessings, filename)
 			}
 			print(buf.String())
 		}
