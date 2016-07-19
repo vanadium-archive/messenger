@@ -8,21 +8,19 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/kr/text"
-	"github.com/nlacasse/gocui"
+	"github.com/jroimartin/gocui"
 
 	"v.io/v23"
 	"v.io/v23/context"
@@ -31,6 +29,7 @@ import (
 	lsec "v.io/x/ref/lib/security"
 	"v.io/x/ref/lib/v23cmd"
 
+	"messenger/ifc"
 	"messenger/internal"
 )
 
@@ -64,187 +63,251 @@ func runChat(ctx *context.T, env *cmdline.Env, args []string) error {
 	}
 	defer node.Stop()
 
+	return runChatApp(ctx, node, params.Store)
+}
+
+func runChatApp(ctx *context.T, node *internal.Node, store internal.MessengerStorage) error {
 	g := gocui.NewGui()
 	if err := g.Init(); err != nil {
 		return err
 	}
 	defer g.Close()
-	g.ShowCursor = true
+	g.Cursor = true
+	g.BgColor = gocui.ColorBlue
+	g.FgColor = gocui.ColorWhite
+	app := app{ctx, g, node, store}
+
 	g.SetLayout(func(g *gocui.Gui) error {
 		maxX, maxY := g.Size()
-		messageInputViewHeight := 3
-		if _, err := g.SetView("history", -1, -1, maxX, maxY-messageInputViewHeight); err != nil {
-			if err != gocui.ErrorUnkView {
+		commandInputViewHeight := 3
+		if v, err := g.SetView("history", -1, 0, maxX, maxY-commandInputViewHeight); err != nil {
+			if err != gocui.ErrUnknownView {
 				return err
 			}
+			v.Title = " Vanadium Peer to Peer Chat "
+			v.BgColor = gocui.ColorBlack
+			v.Autoscroll = true
+			v.Wrap = true
 		}
-		if messageInputView, err := g.SetView("messageInput", -1, maxY-messageInputViewHeight, maxX, maxY-1); err != nil {
-			if err != gocui.ErrorUnkView {
+		if v, err := g.SetView("commandInput", 0, maxY-commandInputViewHeight, maxX-1, maxY-1); err != nil {
+			if err != gocui.ErrUnknownView {
 				return err
 			}
-			messageInputView.Editable = true
+			v.Title = " Enter text or command. Type /help for help "
+			v.BgColor = gocui.ColorBlue
+			v.FgColor = gocui.ColorYellow
+			v.Editable = true
 		}
-		if err := g.SetCurrentView("messageInput"); err != nil {
+		if err := g.SetCurrentView("commandInput"); err != nil {
 			return err
 		}
 		return nil
 	})
-	g.Flush()
-
-	historyView, err := g.View("history")
-	if err != nil {
-		return err
-	}
-
-	clear := func() {
-		historyView.Clear()
-		historyView.SetOrigin(0, 0)
-		g.Flush()
-	}
-
-	print := func(s ...string) {
-		width, height := historyView.Size()
-		for _, t := range s {
-			historyView.Write(text.WrapBytes([]byte(t), width))
-		}
-		numLines := historyView.NumberOfLines()
-		if numLines > height {
-			historyView.SetOrigin(0, numLines-height)
-		}
-		g.Flush()
-	}
-
-	printf := func(format string, args ...interface{}) {
-		print(fmt.Sprintf(format, args...))
-	}
-
-	debug := func() {
-		printf("### %s", node.DebugString())
-	}
-
-	help := func() {
-		print("*** Welcome to Vanadium Peer to Peer Chat ***")
-		print("***")
-		print(color.RedString("*** This is a demo application."))
-		print("***")
-		if encryptionKey == defaultEncryptionKey {
-			print(color.RedString("*** Messages are encrypted with the default key. They are NOT private."))
-		}
-		print("***")
-		print("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are")
-		print("*** created. New peers will see up to 15 minutes of history when they join.")
-		print("***")
-		print("*** Available commands are:")
-		print("***   /debug to show the local node's debug information")
-		print("***   /help to see this help message")
-		print("***   /ping to send a ping")
-		print("***   /quit to exit")
-		print("***   /share <filename> to share a file")
-		print("***")
-		print("*** Type /quit or press Ctrl-C to exit.")
-		print("***")
-	}
 
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
-			return gocui.Quit
+			return gocui.ErrQuit
 		},
 	); err != nil {
 		return err
 	}
 
-	pingId := fmt.Sprintf("%08x", rand.Uint32())
-
-	if err := g.SetKeybinding("messageInput", gocui.KeyEnter, 0,
+	if err := g.SetKeybinding("commandInput", gocui.KeyEnter, 0,
 		func(g *gocui.Gui, v *gocui.View) error {
-			mtxt := strings.TrimSpace(v.Buffer())
+			txt := strings.TrimSpace(v.Buffer())
 			v.Clear()
-			if mtxt == "" {
-				return nil
-			}
-			fname := ""
-			switch {
-			case mtxt == "/debug":
-				debug()
-				return nil
-			case mtxt == "/clear":
-				clear()
-				return nil
-			case mtxt == "/help":
-				help()
-				return nil
-			case mtxt == "/ping":
-				mtxt = fmt.Sprintf("\x01PING %s %d", pingId, time.Now().UnixNano())
-			case mtxt == "/quit":
-				return gocui.Quit
-			case strings.HasPrefix(mtxt, "/share"):
-				fname = strings.TrimSpace(mtxt[5:])
-				printf("### Sharing %s", fname)
-				mtxt = ""
-			case strings.HasPrefix(mtxt, "/"):
-				printf("### Unknown command %s", mtxt)
-				return nil
-			}
-			if err := sendMessage(ctx, node.PubSub(), params.Store, mtxt, fname); err != nil {
-				printf("## sendMessage failed: %v\n", err)
-			}
-			return nil
+			v.SetOrigin(0, 0)
+			return app.handleInput(txt)
 		},
 	); err != nil {
 		return err
 	}
 
-	help()
+	go app.loop()
 
-	go func() {
-		for msg := range node.PubSub().Sub() {
-			_, r, err := params.Store.OpenRead(ctx, msg.Id)
-			if err != nil {
-				continue
-			}
-			msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
-			r.Close()
-			if err != nil {
-				printf("## decryptChatMessage failed: %v\n", err)
-				continue
-			}
-
-			delta := time.Since(msg.CreationTime).Seconds()
-			hops := len(msg.Hops)
-			var buf bytes.Buffer
-			fmt.Fprintf(&buf, "%s %2d %5.2fs ", msg.CreationTime.Local().Format("15:04:05"), hops, delta)
-			if msgText != "" {
-				if strings.HasPrefix(msgText, "\x01PING") {
-					fmt.Fprintf(&buf, "PING from %s", msg.SenderBlessings)
-					reply := "\x01PONG" + msgText[5:]
-					if err := sendMessage(ctx, node.PubSub(), params.Store, reply, ""); err != nil {
-						ctx.Errorf("sendMessage failed: %v", err)
-					}
-				} else if strings.HasPrefix(msgText, "\x01PONG ") {
-					p := strings.Split(msgText, " ")
-					if len(p) != 3 || p[1] != pingId {
-						continue
-					}
-					if i, err := strconv.ParseInt(p[2], 10, 64); err == nil {
-						t := time.Unix(0, i)
-						fmt.Fprintf(&buf, "PING reply from %s: %s", msg.SenderBlessings, time.Since(t))
-					}
-				} else {
-					fmt.Fprintf(&buf, "<%s> %s", msg.SenderBlessings, msgText)
-				}
-			}
-			if filename != "" {
-				fmt.Fprintf(&buf, "Received shared file from %s: %s", msg.SenderBlessings, filename)
-			}
-			print(buf.String())
-		}
-	}()
-
-	if err := g.MainLoop(); err != nil && err != gocui.Quit {
+	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		return err
 	}
 	return nil
 }
+
+type app struct {
+	ctx   *context.T
+	g     *gocui.Gui
+	node  *internal.Node
+	store internal.MessengerStorage
+}
+
+func (a *app) flush() {
+	// AFAICT, this is the only way to update the UI.
+	a.g.Execute(func(g *gocui.Gui) error { return nil })
+}
+
+func (a *app) print(s string) {
+	if view, err := a.g.View("history"); err == nil {
+		view.Write([]byte(s))
+	}
+	a.flush()
+}
+
+func (a *app) printf(format string, args ...interface{}) {
+	a.print(fmt.Sprintf(format, args...))
+}
+
+func (a *app) printErrorf(format string, args ...interface{}) {
+	a.print(color.RedString(fmt.Sprintf(format, args...)))
+}
+
+func (a *app) clear() {
+	view, err := a.g.View("history")
+	if err != nil {
+		return
+	}
+	view.Clear()
+	view.SetOrigin(0, 0)
+	a.flush()
+}
+
+func (a *app) debug() {
+	a.printf("*** %s\n", a.node.DebugString())
+}
+
+func (a *app) help() {
+	a.print("***\n")
+	a.print("*** Welcome to Vanadium Peer to Peer Chat\n")
+	a.print("*** https://github.com/vanadium/messenger\n")
+	a.print("***\n")
+	a.printf("*** %s\n", color.RedString("This is a demo application."))
+	a.print("***\n")
+	if encryptionKey == defaultEncryptionKey {
+		a.printf("*** %s\n", color.RedString("Messages are encrypted with the default key. They are NOT private."))
+	}
+	a.print("***\n")
+	a.print("*** Messages are stored and relayed peer-to-peer for 15 minutes after they are\n")
+	a.print("*** created. New peers will see up to 15 minutes of history when they join.\n")
+	a.print("***\n")
+	a.print("*** Available commands are:\n")
+	a.print("***   /clear to clear this window\n")
+	a.print("***   /debug to show the local node's debug information\n")
+	a.print("***   /help to show this help message\n")
+	a.print("***   /history to show the message history\n")
+	a.print("***   /ping to send a ping\n")
+	a.print("***   /quit to exit\n")
+	a.print("***   /share <filename> to share a file\n")
+	a.print("***\n")
+	a.print("*** Type /quit or press Ctrl-C to exit.\n")
+	a.print("***\n")
+}
+
+func (a *app) history() {
+	ch, err := a.store.Manifest(a.ctx)
+	if err != nil {
+		return
+	}
+	msgs := messages{}
+	for msg := range ch {
+		msgs = append(msgs, msg)
+	}
+	sort.Sort(msgs)
+	for _, msg := range msgs {
+		a.handleMessage(msg)
+	}
+}
+
+func (a *app) handleInput(m string) error {
+	if m == "" {
+		return nil
+	}
+	fname := ""
+	switch {
+	case m == "/debug":
+		a.debug()
+		return nil
+	case m == "/clear":
+		a.clear()
+		return nil
+	case m == "/help":
+		a.help()
+		return nil
+	case m == "/history":
+		a.history()
+		return nil
+	case m == "/ping":
+		m = fmt.Sprintf("\x01PING %s %d", a.node.Id(), time.Now().UnixNano())
+	case m == "/quit":
+		return gocui.ErrQuit
+	case strings.HasPrefix(m, "/share"):
+		fname = strings.TrimSpace(m[6:])
+		a.printf("*** Sharing %s\n", fname)
+		m = ""
+	case strings.HasPrefix(m, "/"):
+		a.printErrorf("*** Unknown command %s\n", m)
+		return nil
+	}
+	if err := sendMessage(a.ctx, a.node.PubSub(), a.store, m, fname); err != nil {
+		a.printErrorf("*** Unable to send message: %v\n", err)
+	}
+	return nil
+}
+
+func (a *app) handleMessage(msg *ifc.Message) {
+	_, r, err := a.store.OpenRead(a.ctx, msg.Id)
+	if err != nil {
+		return
+	}
+	msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
+	r.Close()
+	if err != nil {
+		a.printErrorf("*** Unable to handle message: %v\n", err)
+		return
+	}
+
+	sender := color.GreenString("%s", msg.SenderBlessings)
+	prefix := color.WhiteString("%s %2d %5.2fs",
+		msg.CreationTime.Local().Format("15:04:05"),
+		len(msg.Hops),
+		time.Since(msg.CreationTime).Seconds())
+	if msgText != "" {
+		ping := color.GreenString("PING")
+		switch {
+		case strings.HasPrefix(msgText, "\x01PING"):
+			a.printf("%s %s from %s\n", prefix, ping, sender)
+			reply := "\x01PONG" + msgText[5:]
+			if err := sendMessage(a.ctx, a.node.PubSub(), a.store, reply, ""); err != nil {
+				a.printErrorf("*** Unable to send ping reply: %v", err)
+			}
+		case strings.HasPrefix(msgText, "\x01PONG "):
+			p := strings.Split(msgText, " ")
+			if len(p) != 3 || p[1] != a.node.Id() {
+				return
+			}
+			if i, err := strconv.ParseInt(p[2], 10, 64); err == nil {
+				t := time.Unix(0, i)
+				a.printf("%s %s reply from %s: %.2fs\n", prefix, ping, sender, time.Since(t).Seconds())
+			}
+		default:
+			a.printf("%s <%s> %s\n", prefix, sender, color.YellowString(msgText))
+		}
+	}
+	if filename != "" {
+		a.printf("%s Received shared file from %s: %s\n", prefix, sender, color.YellowString(filename))
+	}
+}
+
+func (a *app) loop() {
+	a.help()
+	ch := a.node.PubSub().Sub()
+	a.history()
+	for msg := range ch {
+		a.handleMessage(msg)
+	}
+}
+
+type messages []*ifc.Message
+
+func (m messages) Len() int           { return len(m) }
+func (m messages) Less(i, j int) bool { return m[i].CreationTime.Before(m[j].CreationTime) }
+func (m messages) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerStorage, txt, fname string) error {
 	msgId := internal.NewMessageId()

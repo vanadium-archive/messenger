@@ -43,11 +43,16 @@ type Params struct {
 }
 
 type Node struct {
+	id       string
 	server   rpc.Server
 	ps       *PubSub
 	pms      []*peerManager
 	counters *Counters
 	cancel   func()
+}
+
+func (n *Node) Id() string {
+	return n.id
 }
 
 func (n *Node) Server() rpc.Server {
@@ -189,7 +194,7 @@ func StartNode(ctx *context.T, params Params) (*Node, error) {
 		}
 	}
 
-	return &Node{server, ps, pms, counters, func() {
+	return &Node{adId.String(), server, ps, pms, counters, func() {
 		cancel()
 		<-ps.done
 		for _, done := range dones {
