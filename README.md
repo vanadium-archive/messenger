@@ -178,13 +178,46 @@ jiri go install messenger/vmsg
 $JIRI_ROOT/release/projects/go/bin/vmsg chat --v23.credentials=$HOME/.vmsg-creds --store-dir=/tmp/store
 ```
 
-## Screenshot
+### Android (native app)
+
+The demo app can be installed on android as a native arm binary and run in
+[Terminal Emulator].
+
+First, build the arm binary:
+
+```
+jiri profile-v23 install --target=arm-linux@ v23:base
+
+GOARCH=arm jiri go install -a -ldflags '-extldflags "-lpthread -static"' messenger/vmsg
+```
+
+Then, copy $JIRI_ROOT/release/projects/go/bin/linux_arm/vmsg and
+[android/vmsg.sh](android/vmsg.sh) your android device.
+
+Open [Terminal Emulator] and run:
+
+(Note: This will run the app with anonymous credentials and open ACLs)
+
+```
+cd
+cp /mnt/sdcard/vmsg /mnt/sdcard/vmsg.sh .
+chmod 755 vmsg vmsg.sh
+./vmsg.sh
+```
+
+## Screenshots
+
+### Linux terminal
 
 ![Screenshot](diagrams/screenshot.png?raw=true)
+
+### Android (Terminal Emulator)
+
+![Screenshot](diagrams/screenshot-android.png?raw=true)
 
 [RFC 4838]: https://tools.ietf.org/html/rfc4838
 [Discovery API]: https://github.com/vanadium/go.v23/blob/master/discovery/model.go
 [Messenger Interface]: ifc/service.vdl
 [Vanadium Security]: https://vanadium.github.io/concepts/security.html
 [data mules]: https://en.wikipedia.org/wiki/Data_mule
-
+[Terminal Emulator]: https://play.google.com/store/apps/details?id=jackpal.androidterm&hl=en
