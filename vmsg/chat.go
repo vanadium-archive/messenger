@@ -8,6 +8,8 @@
 package main
 
 import (
+	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -255,7 +257,7 @@ func (a *app) handleMessage(msg *ifc.Message) {
 	if err != nil {
 		return
 	}
-	msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
+	msgText, filename, err := decryptChatMessage(r, incomingDir)
 	r.Close()
 	if err != nil {
 		a.printErrorf("*** Unable to handle message: %v\n", err)
@@ -310,8 +312,7 @@ func (m messages) Less(i, j int) bool { return m[i].CreationTime.Before(m[j].Cre
 func (m messages) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerStorage, txt, fname string) error {
-	msgId := internal.NewMessageId()
-	encryptedFile, err := encryptChatMessage(msgId, txt, fname)
+	encryptedFile, err := encryptChatMessage(txt, fname)
 	if err != nil {
 		return err
 	}
@@ -322,7 +323,6 @@ func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerSt
 	if err != nil {
 		return err
 	}
-	msg.Id = msgId
 	msg.SenderBlessings, _ = p.BlessingStore().Default()
 	msg.Lifespan = 15 * time.Minute
 	var expiry time.Time
@@ -357,7 +357,7 @@ func sendMessage(ctx *context.T, ps *internal.PubSub, store internal.MessengerSt
 	return nil
 }
 
-func encryptChatMessage(id, text, attachment string) (string, error) {
+func encryptChatMessage(text, attachment string) (string, error) {
 	tmpfile, err := ioutil.TempFile("", "vmsg-encrypt-")
 	if err != nil {
 		return "", err
@@ -367,10 +367,12 @@ func encryptChatMessage(id, text, attachment string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	w := multipart.NewWriter(enc)
-	if err := w.SetBoundary(id); err != nil {
+	comp, err := gzip.NewWriterLevel(enc, compressionLevel)
+	if err != nil {
 		return "", err
 	}
+	w := multipart.NewWriter(comp)
+	comp.Header.Extra = []byte(w.Boundary())
 
 	// Write text field.
 	if err := w.WriteField("text", text); err != nil {
@@ -394,15 +396,26 @@ func encryptChatMessage(id, text, attachment string) (string, error) {
 	if err := w.Close(); err != nil {
 		return "", err
 	}
+	if err := comp.Close(); err != nil {
+		return "", err
+	}
 	return tmpfile.Name(), nil
 }
 
-func decryptChatMessage(id string, msgReader io.Reader, dir string) (text, filename string, err error) {
+func decryptChatMessage(msgReader io.Reader, dir string) (text, filename string, err error) {
 	dec, err := aesDecoder(encryptionKey, msgReader)
 	if err != nil {
 		return "", "", err
 	}
-	r := multipart.NewReader(dec, id)
+	decomp, err := gzip.NewReader(dec)
+	if err != nil {
+		if err == gzip.ErrHeader {
+			return "", "", errors.New("incorrect key")
+		}
+		return "", "", err
+	}
+	defer decomp.Close()
+	r := multipart.NewReader(decomp, string(decomp.Header.Extra))
 	form, err := r.ReadForm(1 << 20)
 	if err != nil {
 		return "", "", err

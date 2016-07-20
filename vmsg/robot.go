@@ -85,7 +85,7 @@ func runRobot(ctx *context.T, env *cmdline.Env, args []string) error {
 			if err != nil {
 				continue
 			}
-			msgText, filename, err := decryptChatMessage(msg.Id, r, incomingDir)
+			msgText, filename, err := decryptChatMessage(r, incomingDir)
 			r.Close()
 			if err != nil {
 				ctx.Infof("decryptChatMessage failed: %v", err)

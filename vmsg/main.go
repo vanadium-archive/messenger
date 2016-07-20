@@ -52,7 +52,8 @@ var (
 	rateAclSenderJson string
 	encryptionKey     string
 
-	incomingDir string
+	incomingDir      string
+	compressionLevel int
 )
 
 func main() {
@@ -74,6 +75,7 @@ func main() {
 	cmdRoot.Flags.StringVar(&encryptionKey, "encryption-key", defaultEncryptionKey, "Messages are encrypted with AES256 using this key")
 
 	cmdChat.Flags.StringVar(&incomingDir, "incoming-dir", os.TempDir(), "The directory where to save incoming files")
+	cmdChat.Flags.IntVar(&compressionLevel, "compression-level", -1, "The gzip compression level for the message content. A value of -1 means default compressions; 1 is best speed; 9 is best compression.")
 
 	cmdline.HideGlobalFlagsExcept()
 	cmdline.Main(cmdRoot)

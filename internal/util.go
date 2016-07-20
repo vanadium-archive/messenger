@@ -15,10 +15,6 @@ import (
 	"messenger/ifc"
 )
 
-func NewMessageId() string {
-	return uuid.New()
-}
-
 // NewMessageFromFile creates a new Message for the content of the given file.
 // The Message's Id, CreationTime, Length, and Sha256 fields are populated.
 func NewMessageFromFile(file string) (ifc.Message, error) {
@@ -44,7 +40,7 @@ func NewMessageFromFile(file string) (ifc.Message, error) {
 		}
 	}
 	return ifc.Message{
-		Id:           NewMessageId(),
+		Id:           uuid.New(),
 		CreationTime: time.Now(),
 		Length:       size,
 		Sha256:       h.Sum(nil),
@@ -57,7 +53,7 @@ func NewMessageFromBytes(b []byte) ifc.Message {
 	h := sha256.New()
 	h.Write(b)
 	return ifc.Message{
-		Id:           NewMessageId(),
+		Id:           uuid.New(),
 		CreationTime: time.Now(),
 		Length:       int64(len(b)),
 		Sha256:       h.Sum(nil),
