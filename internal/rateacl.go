@@ -46,6 +46,10 @@ func (r RateAcl) Authorize(ctx *context.T, call security.Call) error {
 		if !r[i].Acl.Includes(blessings...) {
 			continue
 		}
+		if r[i].Limit == 0 {
+			ctx.Infof("No permissions for %v matched by %v", r[i].Acl, blessings)
+			break
+		}
 		if rate := r[i].c.Rate1m(); rate >= float64(r[i].Limit) {
 			ctx.Infof("Rate limit exceeded for %v matched by %v, %f >= %f", r[i].Acl, blessings, rate, r[i].Limit)
 			return ifc.NewErrRateLimitExceeded(ctx, r[i].Limit)
